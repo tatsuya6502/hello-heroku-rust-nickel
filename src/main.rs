@@ -3,13 +3,13 @@
 #![cfg_attr(feature="clippy", feature(plugin))]
 #![cfg_attr(feature="clippy", plugin(clippy))]
 
-extern crate regex;
-
 #[macro_use]
 extern crate lazy_static;
 
 #[macro_use]
 extern crate nickel;
+
+extern crate regex;
 
 use nickel::{Nickel, HttpRouter, Mountable, StaticFilesHandler};
 
@@ -85,7 +85,7 @@ fn get_server_port() -> u16 {
 }
 
 
-/// Returns vec of strings. e.g. vec!["1.10", "1.9", "1.6"]
+/// Returns vec of version strings. e.g. vec!["1.10", "1.9", "1.6"]
 fn get_versions(dir: &str) -> io::Result<Vec<String>> {
     let mut versions = try!(list_version_dirs(&Path::new(dir)));
     sort_versions(&mut versions);
@@ -93,7 +93,7 @@ fn get_versions(dir: &str) -> io::Result<Vec<String>> {
     Ok(versions.into_iter().map(|(_, _, ver)| ver).collect())
 }
 
-/// Returns vec of tuples. e.g. vec![(1. 9, "1.9"), (1, 10, "1.10")]
+/// Returns vec of version tuples. e.g. vec![(1. 9, "1.9"), (1, 10, "1.10")]
 fn list_version_dirs(dir: &Path) -> io::Result<Vec<(u32, u32, String)>> {
     lazy_static! {
         // NOTE: Assuming dir names are like 1.10, not 1.10.0
@@ -125,32 +125,57 @@ fn list_version_dirs(dir: &Path) -> io::Result<Vec<(u32, u32, String)>> {
     Ok(versions)
 }
 
-// @TODO: Need some tests
 fn sort_versions(versions: &mut [(u32, u32, String)]) {
     versions.sort_by(|&(a0, a1, _), &(b0, b1, _)| {
-        let top = a0.cmp(&b0);
-        if top != Ordering::Equal {
-            top
-        } else {
-            a1.cmp(&b1)
+        match a0.cmp(&b0) {
+            Ordering::Equal => a1.cmp(&b1),
+            other => other,
         }
     });
 }
 
+/// Returns a map for mustache template.
+/// e.g. {"versions", [{"version", "1.10"}, {"version", "1.9"}, {"version", "1.6"}]}
 fn make_menu_data(vers: &[String]) -> HashMap<String, Vec<HashMap<String, String>>> {
     let version_maps = vers.into_iter()
-        .map(|ver| version_map(ver))
+        .map(|ver| {
+            let mut map = HashMap::new();
+            map.insert("version".to_string(), ver.to_string());
+            map
+        })
         .collect();
     let mut menu_data = HashMap::new();
     menu_data.insert("versions".to_string(), version_maps);
     menu_data
 }
 
-/// Creates a map whoes key is "version" and value is the given `&str`.
-/// e.g. `version_map("1.6")` -> `{"version", "1.6"}`
-fn version_map(ver: &str) -> HashMap<String, String> {
-    [("version", ver)]
-        .into_iter()
-        .map(|&(ref k, ref v)| ((*k).to_string(), (*v).to_string()))
-        .collect()
+#[cfg(test)]
+mod tests {
+    use super::{make_menu_data, sort_versions};
+
+    #[test]
+    fn sort_three_versions() {
+        let mut versions =
+            vec![(1, 10, "1.10".to_string()),
+                 (1,  6, "1.6".to_string()),
+                 (1,  9, "1.9".to_string())];
+        let expectation =
+            vec![(1,  6, "1.6".to_string()),
+                 (1,  9, "1.9".to_string()),
+                 (1, 10, "1.10".to_string())];
+
+        sort_versions(&mut versions);
+        assert_eq!(expectation, versions)
+    }
+
+    #[test]
+    fn menu_data() {
+        let versions = vec!["1.10".to_string(), "1.9".to_string(), "1.6".to_string()];
+        let data = make_menu_data(&versions);
+
+        let vers = data.get("versions").expect("versions should not be None.");
+        for (expected, actual) in versions.iter().zip(vers.iter()) {
+            assert_eq!(Some(expected), actual.get("version"));
+        }
+    }
 }
